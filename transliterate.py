@@ -10,6 +10,8 @@ def transliterate_file(input_file, output_file, script):
     with open(input_file, 'r') as in_f:
         lines = in_f.readlines()
 
+    lines = [line.strip() for line in lines]
+
     output_lines = []
     for line in lines:
         line = line.split('\t')
