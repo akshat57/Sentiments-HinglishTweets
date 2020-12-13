@@ -9,6 +9,8 @@ from transformers import AdamW
 from transformers import get_linear_schedule_with_warmup
 import time
 import datetime
+import numpy as np
+import os
 import pdb
 
 # useful snippets
@@ -55,8 +57,6 @@ def tokenize_text(tokeinzer, sentences, labels):
         data_input_ids.append(sent_input_ids)
         data_attention_masks.append(sent_attention_mask)
         output_labels.append(label)
-    
-    pdb.set_trace()
 
     # Convert the lists into tensors.
     data_input_ids = torch.stack(data_input_ids, dim=0)
@@ -123,7 +123,7 @@ def train_epoch(train_dataloader, model, optimizer, scheduler):
         b_labels = batch[2].to(device)
 
         model.zero_grad()
-        pdb.set_trace()
+        # pdb.set_trace()
         loss, logits = model(b_input_ids, 
                              token_type_ids=None, 
                              attention_mask=b_input_mask, 
@@ -141,11 +141,54 @@ def train_epoch(train_dataloader, model, optimizer, scheduler):
     print("  Average training loss: {0:.2f}".format(avg_train_loss))
     print("  Training epcoh took: {:}".format(training_time))
 
+def flat_accuracy(preds, labels):
+    pred_flat = np.argmax(preds, axis=1).flatten()
+    labels_flat = labels.flatten()
+    return np.sum(pred_flat == labels_flat) / len(labels_flat)
+
+def eval_epoch(validation_dataloader, model):
+
+    t0 = time.time()
+    model.eval()
+
+    total_eval_accuracy = 0
+    total_eval_loss = 0
+    nb_eval_steps = 0
+
+    for batch in validation_dataloader:
+
+        b_input_ids = batch[0].to(device)
+        b_input_mask = batch[1].to(device)
+        b_labels = batch[2].to(device)
+
+        with torch.no_grad():
+            (loss, logits) = model(b_input_ids, 
+                                   token_type_ids=None, 
+                                   attention_mask=b_input_mask,
+                                   labels=b_labels)
+        total_eval_loss += loss.item()
+        logits = logits.detach().cpu().numpy()
+        label_ids = b_labels.to('cpu').numpy()
+        total_eval_accuracy += flat_accuracy(logits, label_ids)
+
+    avg_val_accuracy = total_eval_accuracy / len(validation_dataloader)
+    print("  Accuracy: {0:.2f}".format(avg_val_accuracy))
+
+    avg_val_loss = total_eval_loss / len(validation_dataloader)
+    validation_time = format_time(time.time() - t0)
+
+    print("  Validation Loss: {0:.2f}".format(avg_val_loss))
+    print("  Validation took: {:}".format(validation_time))
+
+    return avg_val_loss
+
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description='Fine-tuning on additional sentences')
     parser.add_argument('--input_file', type=str, required=True,
                         help='file containing sentences and labels separated by a tab')
+    parser.add_argument('--save_directory', type=str, required=True,
+                        help='directory to save outputs to')
     args = parser.parse_args()
 
     label_dict = {'positive': 2, 'neutral': 1, 'negative': 0}
@@ -158,7 +201,7 @@ if __name__ == '__main__':
     model = model.to(device)
 
     batch_size = 32
-    num_epochs = 5
+    num_epochs = 2
     train_dataloader, validation_dataloader = load_data(tokenizer, sentences, labels, batch_size)
 
     # set up optimizer, scheduler (?), and loss functions
@@ -173,8 +216,13 @@ if __name__ == '__main__':
                                                 num_training_steps = total_steps)
     
     # call training and val loops
+    best_val_loss = np.inf
+    save_directory = args.save_directory
+    os.makedirs(save_directory, exist_ok=True)
     for i in range(num_epochs):
         train_epoch(train_dataloader, model, optimizer, scheduler)
-        # eval_epoch(validation_dataloader)
-
-    pdb.set_trace()
+        val_loss = eval_epoch(validation_dataloader, model)
+        if val_loss < best_val_loss:
+            print ("\tSaving best model at epoch: {}\t".format(i))
+            tokenizer.save_pretrained(save_directory)
+            model.save_pretrained(save_directory)

@@ -3,6 +3,7 @@ from transformers import pipeline
 import numpy as np
 import emoji
 from collections import Counter
+import pickle
 import pdb
 
 def contains_emoji(sentence):
@@ -56,6 +57,9 @@ def predict(sentences, labels, classifier, verbose):
             if i % 1000 == 0:
                 print('Finished processing {}/{} sentences'.format(i, len(sentences)))    
     
+    # with open('sail.pkl', 'wb') as out_f:
+    #     pickle.dump(pred_label_score, out_f)
+
     sorted_pred_label_score = sorted(pred_label_score, key=lambda k: k[3], reverse=True)
     top_10_num = int(0.1*len(sentences))
     top_10_pred_label_score = sorted_pred_label_score[:top_10_num]
