@@ -5,8 +5,10 @@ import torch
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
 from torch.utils.data import TensorDataset, random_split
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
-rom transformers import AdamW
+from transformers import AdamW
 from transformers import get_linear_schedule_with_warmup
+import time
+import datetime
 import pdb
 
 # useful snippets
@@ -91,9 +93,53 @@ def load_data(tokenizer, sentences, labels, batch_size):
 
     return train_dataloader, validation_dataloader
 
-def train_epoch(train_dataloader):
+def format_time(elapsed):
+    '''
+    Takes a time in seconds and returns a string hh:mm:ss
+    '''
+    # Round to the nearest second.
+    elapsed_rounded = int(round((elapsed)))
+    
+    # Format as hh:mm:ss
+    return str(datetime.timedelta(seconds=elapsed_rounded))
+
+def train_epoch(train_dataloader, model, optimizer, scheduler):
+
+    t0 = time.time()
+    model.train()
+    total_train_loss = 0
 
     for step, batch in enumerate(train_dataloader):
+        # Progress update every 40 batches.
+        if step % 40 == 0 and not step == 0:
+            # Calculate elapsed time in minutes.
+            elapsed = format_time(time.time() - t0)
+            
+            # Report progress.
+            print('  Batch {:>5,}  of  {:>5,}.    Elapsed: {:}.'.format(step, len(train_dataloader), elapsed))
+
+        b_input_ids = batch[0].to(device)
+        b_input_mask = batch[1].to(device)
+        b_labels = batch[2].to(device)
+
+        model.zero_grad()
+        pdb.set_trace()
+        loss, logits = model(b_input_ids, 
+                             token_type_ids=None, 
+                             attention_mask=b_input_mask, 
+                             labels=b_labels)
+
+        total_train_loss += loss.item()
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+        optimizer.step()
+        scheduler.step()
+    
+    avg_train_loss = total_train_loss / len(train_dataloader)  
+    training_time = format_time(time.time() - t0)
+    print("")
+    print("  Average training loss: {0:.2f}".format(avg_train_loss))
+    print("  Training epcoh took: {:}".format(training_time))
 
 if __name__ == '__main__':
 
@@ -112,6 +158,7 @@ if __name__ == '__main__':
     model = model.to(device)
 
     batch_size = 32
+    num_epochs = 5
     train_dataloader, validation_dataloader = load_data(tokenizer, sentences, labels, batch_size)
 
     # set up optimizer, scheduler (?), and loss functions
@@ -120,14 +167,14 @@ if __name__ == '__main__':
                   lr = 2e-5, # args.learning_rate - default is 5e-5, our notebook had 2e-5
                   eps = 1e-8 # args.adam_epsilon  - default is 1e-8.
                 )
+    total_steps = len(train_dataloader) * num_epochs
     scheduler = get_linear_schedule_with_warmup(optimizer, 
                                                 num_warmup_steps = 0, # Default value in run_glue.py
                                                 num_training_steps = total_steps)
     
-    # set num_epochs, model.train(), and call training loop
-    num_epochs = 5
+    # call training and val loops
     for i in range(num_epochs):
-        train_epoch(train_dataloader)
-        eval_epoch(validation_dataloader)
+        train_epoch(train_dataloader, model, optimizer, scheduler)
+        # eval_epoch(validation_dataloader)
 
     pdb.set_trace()
