@@ -4,6 +4,7 @@ import numpy as np
 import emoji
 from collections import Counter
 import pickle
+from transformers import AutoTokenizer, AutoModelForSequenceClassification
 import pdb
 
 def contains_emoji(sentence):
@@ -30,7 +31,7 @@ def read_data(input_file, emoji_filter):
 
     return sentences, labels
 
-def predict(sentences, labels, classifier, verbose):
+def predict(sentences, labels, classifier, verbose, top10_type='overall'):
     preds, output_labels = [], []
     pred_label_score = []
     mapping_dict = {'LABEL_0': 'negative', 'LABEL_1': 'neutral', 'LABEL_2': 'positive'}
@@ -60,15 +61,44 @@ def predict(sentences, labels, classifier, verbose):
     # with open('sail.pkl', 'wb') as out_f:
     #     pickle.dump(pred_label_score, out_f)
 
-    sorted_pred_label_score = sorted(pred_label_score, key=lambda k: k[3], reverse=True)
-    top_10_num = int(0.1*len(sentences))
-    top_10_pred_label_score = sorted_pred_label_score[:top_10_num]
+    if top10_type == 'overall':
+        sorted_pred_label_score = sorted(pred_label_score, key=lambda k: k[3], reverse=True)
+        top_10_num = int(0.1*len(sentences))
+        top_10_pred_label_score = sorted_pred_label_score[:top_10_num]
 
-    top10 = {}
-    top10['top10_sents'] = [ele[0] for ele in top_10_pred_label_score]
-    top10['top10_preds'] = [ele[1] for ele in top_10_pred_label_score]
-    top10['top10_labels'] = [ele[2] for ele in top_10_pred_label_score]
-    top10['top10_scores'] = [ele[3] for ele in top_10_pred_label_score]
+        top10 = {}
+        top10['top10_sents'] = [ele[0] for ele in top_10_pred_label_score]
+        top10['top10_preds'] = [ele[1] for ele in top_10_pred_label_score]
+        top10['top10_labels'] = [ele[2] for ele in top_10_pred_label_score]
+        top10['top10_scores'] = [ele[3] for ele in top_10_pred_label_score]
+    
+    elif top10_type == 'binary-class-wise':
+
+        pos_preds = [ele for ele in pred_label_score if ele[1] == 'positive']
+        neg_preds = [ele for ele in pred_label_score if ele[1] == 'negative']
+
+        sorted_pos_preds = sorted(pos_preds, key=lambda k: k[3], reverse=True)
+        sorted_neg_preds = sorted(neg_preds, key=lambda k: k[3], reverse=True)
+
+        top10_pos_num = int(0.1*len(pos_preds))
+        top10_pos = sorted_pos_preds[:top10_pos_num]
+
+        top10_neg_num = int(0.1*len(neg_preds))
+        top10_neg = sorted_neg_preds[:top10_neg_num]
+
+        top10 = {}
+        top10['top10_sents'] = [ele[0] for ele in top10_pos]
+        top10['top10_preds'] = [ele[1] for ele in top10_pos]
+        top10['top10_labels'] = [ele[2] for ele in top10_pos]
+        top10['top10_scores'] = [ele[3] for ele in top10_pos]
+
+        top10['top10_sents'].extend([ele[0] for ele in top10_neg])
+        top10['top10_preds'].extend([ele[1] for ele in top10_neg])
+        top10['top10_labels'].extend([ele[2] for ele in top10_neg])
+        top10['top10_scores'].extend([ele[3] for ele in top10_neg])
+
+    else:
+        raise Exception("Incorrect type")
 
     return preds, output_labels, top10
 
@@ -91,7 +121,12 @@ def main():
     # default HF DistillBERT model
     # classifier = pipeline('sentiment-analysis')
     # model trained on twitter data
-    classifier = pipeline('sentiment-analysis', 'cardiffnlp/twitter-roberta-base-sentiment')
+    # classifier = pipeline('sentiment-analysis', 'cardiffnlp/twitter-roberta-base-sentiment')
+    
+    # classifier = pipeline('sentiment-analysis', model=model, tokenizer=tokenizer)
+    tokenizer = AutoTokenizer.from_pretrained('Sentimix_run4')
+    model = AutoModelForSequenceClassification.from_pretrained('Sentimix_run4')
+    classifier = pipeline('sentiment-analysis', model=model, tokenizer=tokenizer)
     #sota
     # classifier = pipeline('sentiment-analysis', 'mrm8488/t5-base-finetuned-imdb-sentiment') # error in loading this model
     # hindi sentiment analyzer that words on devanagari

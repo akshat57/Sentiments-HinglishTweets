@@ -39,6 +39,8 @@ def read_data_file(input_file, label_dict):
 
 def tokenize_text(tokeinzer, sentences, labels):
 
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
     data_input_ids, data_attention_masks, output_labels = [], [], []
 
     #TODO: can this be optimized?
@@ -65,19 +67,25 @@ def tokenize_text(tokeinzer, sentences, labels):
 
     return data_input_ids, data_attention_masks, output_labels
 
-def load_data(tokenizer, sentences, labels, batch_size):
+def load_data(tokenizer, sentences, labels, test_sentences, test_labels, batch_size):
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     input_ids, attention_masks, labels = tokenize_text(tokenizer, sentences, labels)
+    test_input_ids, test_attention_masks, test_labels = tokenize_text(tokenizer, test_sentences, test_labels)
 
     dataset = TensorDataset(input_ids, attention_masks, labels)
+    test_dataset = TensorDataset(test_input_ids, test_attention_masks, test_labels)
 
-    train_size = int(0.9 * len(dataset))
+    train_size = int(0.95 * len(dataset))
     val_size = len(dataset) - train_size
+    test_size = len(test_dataset)
 
     train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
 
     print('{:>5,} training samples'.format(train_size))
     print('{:>5,} validation samples'.format(val_size))
+    print('{:>5,} test samples'.format(test_size))
 
     train_dataloader = DataLoader(
             train_dataset,  
@@ -91,7 +99,15 @@ def load_data(tokenizer, sentences, labels, batch_size):
             batch_size = batch_size
         )
 
-    return train_dataloader, validation_dataloader
+    test_dataloader = DataLoader(
+            test_dataset,
+            sampler = SequentialSampler(test_dataset),
+            batch_size = batch_size
+        )
+
+    print('{:>5,} test num_of_batches'.format(len(test_dataloader)))
+
+    return train_dataloader, validation_dataloader, test_dataloader
 
 def format_time(elapsed):
     '''
@@ -104,6 +120,8 @@ def format_time(elapsed):
     return str(datetime.timedelta(seconds=elapsed_rounded))
 
 def train_epoch(train_dataloader, model, optimizer, scheduler):
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     t0 = time.time()
     model.train()
@@ -148,6 +166,8 @@ def flat_accuracy(preds, labels):
 
 def eval_epoch(validation_dataloader, model):
 
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
     t0 = time.time()
     model.eval()
 
@@ -155,7 +175,9 @@ def eval_epoch(validation_dataloader, model):
     total_eval_loss = 0
     nb_eval_steps = 0
 
-    for batch in validation_dataloader:
+    for b, batch in enumerate(validation_dataloader):
+
+        # print(b)
 
         b_input_ids = batch[0].to(device)
         b_input_mask = batch[1].to(device)
@@ -172,7 +194,7 @@ def eval_epoch(validation_dataloader, model):
         total_eval_accuracy += flat_accuracy(logits, label_ids)
 
     avg_val_accuracy = total_eval_accuracy / len(validation_dataloader)
-    print("  Accuracy: {0:.2f}".format(avg_val_accuracy))
+    print("  Validation Accuracy: {0:.2f}".format(avg_val_accuracy))
 
     avg_val_loss = total_eval_loss / len(validation_dataloader)
     validation_time = format_time(time.time() - t0)
@@ -182,17 +204,65 @@ def eval_epoch(validation_dataloader, model):
 
     return avg_val_loss
 
-if __name__ == '__main__':
 
-    parser = argparse.ArgumentParser(description='Fine-tuning on additional sentences')
-    parser.add_argument('--input_file', type=str, required=True,
-                        help='file containing sentences and labels separated by a tab')
-    parser.add_argument('--save_directory', type=str, required=True,
-                        help='directory to save outputs to')
-    args = parser.parse_args()
+def test_epoch(validation_dataloader, model):
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    t0 = time.time()
+    model.eval()
+
+    total_eval_accuracy = 0
+    total_eval_loss = 0
+    nb_eval_steps = 0
+
+    for b, batch in enumerate(validation_dataloader):
+
+        # print(b)
+
+        b_input_ids = batch[0].to(device)
+        b_input_mask = batch[1].to(device)
+        b_labels = batch[2].to(device)
+
+        with torch.no_grad():
+            (loss, logits) = model(b_input_ids, 
+                                   token_type_ids=None, 
+                                   attention_mask=b_input_mask,
+                                   labels=b_labels)
+        total_eval_loss += loss.item()
+        logits = logits.detach().cpu().numpy()
+        label_ids = b_labels.to('cpu').numpy()
+        total_eval_accuracy += flat_accuracy(logits, label_ids)
+
+    avg_val_accuracy = total_eval_accuracy / len(validation_dataloader)
+    print("  Test Accuracy: {0:.2f}".format(avg_val_accuracy))
+
+    avg_val_loss = total_eval_loss / len(validation_dataloader)
+    validation_time = format_time(time.time() - t0)
+
+    print("  Test Loss: {0:.2f}".format(avg_val_loss))
+    print("  Test took: {:}".format(validation_time))
+
+    return avg_val_loss
+
+# if __name__ == '__main__':
+
+def fine_tune_fun(sentences, labels, test_sentences, test_labels, save_directory):
+
+    # parser = argparse.ArgumentParser(description='Fine-tuning on additional sentences')
+    # parser.add_argument('--input_file', type=str, required=True,
+    #                     help='file containing sentences and labels separated by a tab')
+    # parser.add_argument('--test_input_file', type=str, required=True,
+    #                     help='file containing sentences and labels separated by a tab')
+    # parser.add_argument('--save_directory', type=str, required=True,
+    #                     help='directory to save outputs to')
+    # args = parser.parse_args()
 
     label_dict = {'positive': 2, 'neutral': 1, 'negative': 0}
-    sentences, labels = read_data_file(args.input_file, label_dict)
+    # sentences, labels = read_data_file(args.input_file, label_dict)
+    # test_sentences, test_labels = read_data_file(args.test_input_file, label_dict)
+    labels = [label_dict[ele] for ele in labels] #converting to integer label
+    test_labels = [label_dict[ele] for ele in test_labels]
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -202,7 +272,7 @@ if __name__ == '__main__':
 
     batch_size = 32
     num_epochs = 2
-    train_dataloader, validation_dataloader = load_data(tokenizer, sentences, labels, batch_size)
+    train_dataloader, validation_dataloader, test_dataloader = load_data(tokenizer, sentences, labels, test_sentences, test_labels, batch_size)
 
     # set up optimizer, scheduler (?), and loss functions
     #TODO: took parameters from reference directly; figure out best setting
@@ -217,12 +287,14 @@ if __name__ == '__main__':
     
     # call training and val loops
     best_val_loss = np.inf
-    save_directory = args.save_directory
+    save_directory = save_directory
     os.makedirs(save_directory, exist_ok=True)
     for i in range(num_epochs):
         train_epoch(train_dataloader, model, optimizer, scheduler)
         val_loss = eval_epoch(validation_dataloader, model)
+        test_loss = test_epoch(test_dataloader, model)
         if val_loss < best_val_loss:
             print ("\tSaving best model at epoch: {}\t".format(i))
             tokenizer.save_pretrained(save_directory)
             model.save_pretrained(save_directory)
+            best_val_loss = val_loss
