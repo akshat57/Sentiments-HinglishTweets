@@ -7,6 +7,7 @@ from torch.utils.data import TensorDataset, random_split
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 from transformers import AdamW
 from transformers import get_linear_schedule_with_warmup
+from sklearn.utils import shuffle
 import time
 import datetime
 import numpy as np
@@ -77,7 +78,7 @@ def load_data(tokenizer, sentences, labels, test_sentences, test_labels, batch_s
     dataset = TensorDataset(input_ids, attention_masks, labels)
     test_dataset = TensorDataset(test_input_ids, test_attention_masks, test_labels)
 
-    train_size = int(0.95 * len(dataset))
+    train_size = int(0.90 * len(dataset))
     val_size = len(dataset) - train_size
     test_size = len(test_dataset)
 
@@ -270,8 +271,12 @@ def fine_tune_fun(sentences, labels, test_sentences, test_labels, save_directory
     model = AutoModelForSequenceClassification.from_pretrained("cardiffnlp/twitter-roberta-base-sentiment")
     model = model.to(device)
 
-    batch_size = 32
-    num_epochs = 2
+    batch_size = 64
+    num_epochs = 5
+
+    #randomly shuffle
+    sentences, labels = shuffle(sentences, labels)
+
     train_dataloader, validation_dataloader, test_dataloader = load_data(tokenizer, sentences, labels, test_sentences, test_labels, batch_size)
 
     # set up optimizer, scheduler (?), and loss functions
@@ -293,7 +298,7 @@ def fine_tune_fun(sentences, labels, test_sentences, test_labels, save_directory
         train_epoch(train_dataloader, model, optimizer, scheduler)
         val_loss = eval_epoch(validation_dataloader, model)
         test_loss = test_epoch(test_dataloader, model)
-        if val_loss < best_val_loss:
+        if val_loss <= best_val_loss:
             print ("\tSaving best model at epoch: {}\t".format(i))
             tokenizer.save_pretrained(save_directory)
             model.save_pretrained(save_directory)

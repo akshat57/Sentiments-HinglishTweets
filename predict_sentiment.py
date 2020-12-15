@@ -97,6 +97,41 @@ def predict(sentences, labels, classifier, verbose, top10_type='overall'):
         top10['top10_labels'].extend([ele[2] for ele in top10_neg])
         top10['top10_scores'].extend([ele[3] for ele in top10_neg])
 
+    elif top10_type == 'class-wise':
+
+        pos_preds = [ele for ele in pred_label_score if ele[1] == 'positive']
+        neg_preds = [ele for ele in pred_label_score if ele[1] == 'negative']
+        neutral_preds = [ele for ele in pred_label_score if ele[1] == 'neutral']
+
+        sorted_pos_preds = sorted(pos_preds, key=lambda k: k[3], reverse=True)
+        sorted_neg_preds = sorted(neg_preds, key=lambda k: k[3], reverse=True)
+        sorted_neutral_preds = sorted(neutral_preds, key=lambda k: k[3], reverse=True)
+
+        top10_pos_num = int(0.1*len(pos_preds))
+        top10_pos = sorted_pos_preds[:top10_pos_num]
+
+        top10_neg_num = int(0.1*len(neg_preds))
+        top10_neg = sorted_neg_preds[:top10_neg_num]
+
+        top10_neutral_num = int(0.1*len(neutral_preds))
+        top10_neutral = sorted_neutral_preds[:top10_neutral_num]
+
+        top10 = {}
+        top10['top10_sents'] = [ele[0] for ele in top10_pos]
+        top10['top10_preds'] = [ele[1] for ele in top10_pos]
+        top10['top10_labels'] = [ele[2] for ele in top10_pos]
+        top10['top10_scores'] = [ele[3] for ele in top10_pos]
+
+        top10['top10_sents'].extend([ele[0] for ele in top10_neg])
+        top10['top10_preds'].extend([ele[1] for ele in top10_neg])
+        top10['top10_labels'].extend([ele[2] for ele in top10_neg])
+        top10['top10_scores'].extend([ele[3] for ele in top10_neg])
+
+        top10['top10_sents'].extend([ele[0] for ele in top10_neutral])
+        top10['top10_preds'].extend([ele[1] for ele in top10_neutral])
+        top10['top10_labels'].extend([ele[2] for ele in top10_neutral])
+        top10['top10_scores'].extend([ele[3] for ele in top10_neutral])
+
     else:
         raise Exception("Incorrect type")
 
