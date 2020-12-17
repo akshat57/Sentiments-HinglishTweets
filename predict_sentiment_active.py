@@ -16,29 +16,32 @@ def read_data(input_file, emoji_filter, binary_filter):
     with open(input_file, 'r') as in_f:
         lines = in_f.readlines()
     lines = [line.strip() for line in lines]
-    sentences, labels = [], []
+    sentences, labels, hindi_scores = [], [], []
     for line in lines:
         try:
-            sentence, label = line.split('\t')
+            sentence, label, hindi_score = line.split('\t')
         except:
             continue
         if not emoji_filter and not binary_filter:
             sentences.append(sentence)
             labels.append(label)
+            hindi_scores.append(hindi_score)
         elif emoji_filter and contains_emoji(sentence):
             sentences.append(sentence)
             labels.append(label)
+            hindi_scores.append(hindi_score)
         elif binary_filter and label != 'neutral':
             sentences.append(sentence)
             labels.append(label)
+            hindi_scores.append(hindi_score)
 
-    return sentences, labels
+    return sentences, labels, hindi_scores
 
-def predict(sentences, labels, classifier, verbose, top10_type='overall', increase_factor=1):
+def predict(sentences, labels, hindi_scores, classifier, verbose, top10_type='overall', increase_factor=1):
     preds, output_labels = [], []
     pred_label_score = []
     mapping_dict = {'LABEL_0': 'negative', 'LABEL_1': 'neutral', 'LABEL_2': 'positive'}
-    for i, (sentence, label) in enumerate(zip(sentences, labels)):
+    for i, (sentence, label, hindi_score) in enumerate(zip(sentences, labels, hindi_scores)):
         try:
             pred = classifier(sentence)
         except:
@@ -53,7 +56,7 @@ def predict(sentences, labels, classifier, verbose, top10_type='overall', increa
         label = label.lower()
         preds.append(pred_label)
         output_labels.append(label)
-        pred_label_score.append((sentence, pred_label, label, pred[0]['score']))
+        pred_label_score.append((sentence, pred_label, label, pred[0]['score'], hindi_score))
         if verbose:
             print('{}) Sentence: {}\nLabel: {}\nScore: {}'.format(i, sentence, pred_label, pred[0]['score']))
             print(25*'#')
@@ -168,7 +171,28 @@ def predict(sentences, labels, classifier, verbose, top10_type='overall', increa
     else:
         raise Exception("Incorrect type")
 
-    return preds, output_labels, top10
+    active_sorted_pred_label_scores = [ele for ele in pred_label_score if ele[2] != 'neutral']
+    active_sorted_pred_label_scores = sorted(active_sorted_pred_label_scores, key=lambda k: (k[3]*0.2 - float(k[4])))
+    active_sorted_pred_label_scores = [ele for ele in active_sorted_pred_label_scores if not ele[0] in top10['top10_sents']] # removing sentences that are already going in for fine-tuning
+    num_active = int(0.02*increase_factor*len(active_sorted_pred_label_scores)) # 2% of labelled sentences
+    active_selections = active_sorted_pred_label_scores[:num_active]
+
+    print('%'*10 + 'Select Few Active Sentences' + '%'*10)
+    for ac in range(5):
+        print('Sentence: {}'.format(active_selections[ac][0]))
+        print('Prediction: {}'.format(active_selections[ac][1]))
+        print('Label: {}'.format(active_selections[ac][2]))
+        print('Score: {}'.format(active_selections[ac][3]))
+        print('Hindi-ness: {}'.format(active_selections[ac][4]))
+    print('%'*25)
+
+    active_selections_dict = {}
+    active_selections_dict['sents'] = [ele[0] for ele in active_selections]
+    active_selections_dict['preds'] = [ele[1] for ele in active_selections]
+    active_selections_dict['labels'] = [ele[2] for ele in active_selections]
+    active_selections_dict['scores'] = [ele[3] for ele in active_selections]
+
+    return preds, output_labels, top10, active_selections_dict
 
 def main():
 
@@ -185,7 +209,7 @@ def main():
                         help='Whether to apply emoji heuristic.')
     args = parser.parse_args()
 
-    sentences, labels = read_data(args.input_file, args.emoji_filter, args.binary)
+    sentences, labels, hindi_scores = read_data(args.input_file, args.emoji_filter, args.binary)
 
     label_distribution = Counter(labels)
     print('Actual Label Distribution:')
@@ -205,7 +229,7 @@ def main():
     # hindi sentiment analyzer that words on devanagari
     # classifier = pipeline('sentiment-analysis', 'monsoon-nlp/hindi-bert') # this did not work
     # classifier = pipeline('sentiment-analysis', 'monsoon-nlp/hindi-tpu-electra')
-    predictions, labels, top10 = predict(sentences, labels, classifier, args.verbose, 'class-wise')
+    predictions, labels, top10, active_selections = predict(sentences, labels, hindi_scores, classifier, args.verbose, 'class-wise')
 
     top10_sents = top10['top10_sents']
     top10_preds = top10['top10_preds']
@@ -221,15 +245,15 @@ def main():
     #     print('Score: {}'.format(top10_scores[i]))
     #     print(25*'#')
 
-    print('Is Zero-shot better than humans?')
-    print(50*'-')
-    for i in range(len(top10_sents)):
-        if top10_labels[i] != top10_preds[i]:
-            print('Sentence: {}'.format(top10_sents[i]))
-            print('Prediction: {}'.format(top10_preds[i]))
-            print('Actual Label: {}'.format(top10_labels[i]))
-            print('Score: {}'.format(top10_scores[i]))
-            print(25*'#')
+    # print('Is Zero-shot better than humans?')
+    # print(50*'-')
+    # for i in range(len(top10_sents)):
+    #     if top10_labels[i] != top10_preds[i]:
+    #         print('Sentence: {}'.format(top10_sents[i]))
+    #         print('Prediction: {}'.format(top10_preds[i]))
+    #         print('Actual Label: {}'.format(top10_labels[i]))
+    #         print('Score: {}'.format(top10_scores[i]))
+    #         print(25*'#')
 
     pred_label_distribution = Counter(top10_preds)
     print('Distribution of Top 10% of predicted labels:')

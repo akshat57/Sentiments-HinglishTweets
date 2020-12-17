@@ -28,19 +28,18 @@ def read_data_file(input_file, label_dict):
     
     lines = [line.strip() for line in lines]
 
-    sentences, labels = [], []
+    sentences, labels, hindi_scores = [], [], []
     for line in lines:
-        line = line.split('\t')
-        sentence = '\t'.join(line[:-1])
-        label = line[-1]
+        sentence, label, hindi_score = line.split('\t')
+        # sentence = '\t'.join(line[:-1])
+        # label = line[-1]
         sentences.append(sentence)
         labels.append(label_dict[label])
+        hindi_scores.append(hindi_score)
 
-    return sentences, labels
+    return sentences, labels, hindi_scores
 
 def tokenize_text(tokeinzer, sentences, labels):
-
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     data_input_ids, data_attention_masks, output_labels = [], [], []
 
@@ -291,7 +290,7 @@ def fine_tune_fun(sentences, labels, test_sentences, test_labels, num_epochs, mo
     model = AutoModelForSequenceClassification.from_pretrained(model_directory)
     model = model.to(device)
 
-    batch_size = 32 #64
+    batch_size = 32
     # num_epochs = 5
 
     #randomly shuffle
