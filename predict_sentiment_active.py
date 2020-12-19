@@ -172,7 +172,8 @@ def predict(sentences, labels, hindi_scores, classifier, verbose, top10_type='ov
         raise Exception("Incorrect type")
 
     active_sorted_pred_label_scores = [ele for ele in pred_label_score if ele[2] != 'neutral']
-    active_sorted_pred_label_scores = sorted(active_sorted_pred_label_scores, key=lambda k: (k[3]*0.2 - float(k[4])))
+    # active_sorted_pred_label_scores = sorted(active_sorted_pred_label_scores, key=lambda k: (k[3]*0.2 - float(k[4])))
+    active_sorted_pred_label_scores = sorted(active_sorted_pred_label_scores, key=lambda k: -float(k[4]))
     active_sorted_pred_label_scores = [ele for ele in active_sorted_pred_label_scores if not ele[0] in top10['top10_sents']] # removing sentences that are already going in for fine-tuning
     num_active = int(0.02*increase_factor*len(active_sorted_pred_label_scores)) # 2% of labelled sentences
     active_selections = active_sorted_pred_label_scores[:num_active]
